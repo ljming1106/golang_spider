@@ -16,7 +16,7 @@ const (
 	urlPerfix = "https://movie.douban.com/top250?start="
 )
 
-var header = map[string]string{
+var fixedHeader = map[string]string{
 	"Host":                      "movie.douban.com",
 	"Connection":                "keep-alive",
 	"Cache-Control":             "max-age=0",
@@ -25,7 +25,7 @@ var header = map[string]string{
 	"Referer":                   "https://movie.douban.com/top250",
 }
 
-var userAgent = [...]string{"Mozilla/5.0 (compatible, MSIE 10.0, Windows NT, DigExt)",
+var fixedUserAgent = [...]string{"Mozilla/5.0 (compatible, MSIE 10.0, Windows NT, DigExt)",
 	"Mozilla/4.0 (compatible, MSIE 7.0, Windows NT 5.1, 360SE)",
 	"Mozilla/4.0 (compatible, MSIE 8.0, Windows NT 6.0, Trident/4.0)",
 	"Mozilla/5.0 (compatible, MSIE 9.0, Windows NT 6.1, Trident/5.0,",
@@ -42,22 +42,28 @@ var userAgent = [...]string{"Mozilla/5.0 (compatible, MSIE 10.0, Windows NT, Dig
 
 var r = rand.New(rand.NewSource(time.Now().UnixNano()))
 
-func main() {
+type httpRequest struct {
+	url       string
+	header    map[string]string
+	userAgent [14]string
+}
 
-	//创建csv文件
-	f, err := os.Create("./douban.txt")
-	if err != nil {
-		panic(err)
-	}
+func main() {
+	f := createFile("./douban.txt")
 	defer f.Close()
+
+	fBody := createFile("./douban_body.txt")
+	defer fBody.Close()
 
 	//写入
 	f.WriteString("电影名称" + "\t" + "评分" + "\t" + "评价数量" + "\t" + "\r\n")
 
 	for i := 0; i < 10; i++ {
 		log.Println("正在爬取第" + strconv.Itoa(i+1) + "页数据...")
-		url := urlPerfix + strconv.Itoa(i*25)
-		body := getHtmlBody(url)
+		httpReq := httpRequest{urlPerfix + strconv.Itoa(i*25), fixedHeader, fixedUserAgent}
+		body := getHtmlBody(httpReq)
+
+		fBody.WriteString(body + "\r\n")
 
 		//评价人数
 		commentCount := `<span>(.*?)评价</span>`
@@ -77,21 +83,30 @@ func main() {
 		f.WriteString("\xEF\xBB\xBF")
 
 		for i := 0; i < len(txt2); i++ {
-			fmt.Printf("%s %s %s\n", txt4[i][1], txt3[i][1], txt2[i][1])
+			fmt.Printf("%s %s %s\n", txt4[i][2], txt3[i][1], txt2[i][1])
 			f.WriteString(txt4[i][2] + "\t" + txt3[i][1] + "\t" + txt2[i][1] + "\t" + "\r\n")
 		}
 
 	}
 }
 
-func getHtmlBody(url string) string {
+func createFile(filename string) *os.File {
+	//创建文件
+	f, err := os.Create(filename)
+	if err != nil {
+		panic(err)
+	}
+	return f
+}
+
+func getHtmlBody(httpReq httpRequest) string {
 	client := &http.Client{}
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", httpReq.url, nil)
 	if err != nil {
 		log.Fatalf("new request err ->%v", err)
 	}
-	header["User-Agent"] = getRandomUserAgent()
-	for key, val := range header {
+	httpReq.header["User-Agent"] = getRandomUserAgent(httpReq)
+	for key, val := range httpReq.header {
 		req.Header.Add(key, val)
 	}
 	resp, err := client.Do(req)
@@ -106,6 +121,6 @@ func getHtmlBody(url string) string {
 	return string(body)
 }
 
-func getRandomUserAgent() string {
-	return userAgent[r.Intn(len(userAgent))]
+func getRandomUserAgent(httpReq httpRequest) string {
+	return httpReq.userAgent[r.Intn(len(httpReq.userAgent))]
 }
